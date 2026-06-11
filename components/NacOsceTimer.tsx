@@ -44,6 +44,8 @@ let sharedAlarmAudio: HTMLAudioElement | null = null;
 let sharedAlarmBuffer: AudioBuffer | null = null;
 let sharedAlarmBufferPromise: Promise<AudioBuffer | null> | null = null;
 let sharedAlarmUnlocked = false;
+let sharedAudioGain: GainNode | null = null;
+let sharedVolume = 1;
 
 function formatTime(totalSeconds: number) {
   const minutes = Math.floor(totalSeconds / 60)
@@ -183,7 +185,7 @@ function getAlarmAudio() {
   if (!sharedAlarmAudio) {
     sharedAlarmAudio = new Audio(ALARM_AUDIO_SRC);
     sharedAlarmAudio.preload = "auto";
-    sharedAlarmAudio.volume = 1;
+    sharedAlarmAudio.volume = sharedVolume;
     sharedAlarmAudio.setAttribute("playsinline", "true");
     sharedAlarmAudio.setAttribute("webkit-playsinline", "true");
   }
@@ -269,11 +271,13 @@ function startAlarmBuffer(buffer: AudioBuffer) {
 
   void context.resume();
   const source = context.createBufferSource();
-  const gain = context.createGain();
-  gain.gain.value = 1;
+  if (!sharedAudioGain) {
+    sharedAudioGain = context.createGain();
+    sharedAudioGain.connect(context.destination);
+  }
+  sharedAudioGain.gain.value = sharedVolume;
   source.buffer = buffer;
-  source.connect(gain);
-  gain.connect(context.destination);
+  source.connect(sharedAudioGain);
   source.start(context.currentTime + 0.01);
 }
 
@@ -311,7 +315,7 @@ function playAlarmElement() {
 
   audio.pause();
   audio.currentTime = 0;
-  audio.volume = 1;
+  audio.volume = sharedVolume;
   const playPromise = audio.play();
   void playPromise
     .then(() => {
@@ -342,6 +346,33 @@ function playAlarm(type: AlarmType, isMuted = false) {
   navigator.vibrate?.([240, 100, 240, 100, 340]);
 }
 
+function setAudioVolume(volume: number) {
+  sharedVolume = Math.max(0, Math.min(1, volume));
+  if (sharedAudioGain) {
+    sharedAudioGain.gain.value = sharedVolume;
+  }
+  const audio = sharedAlarmAudio;
+  if (audio) {
+    audio.volume = sharedVolume;
+  }
+}
+
+function playTestAlarm() {
+  const bufferPromise = loadAlarmBuffer();
+  if (!bufferPromise) {
+    playAlarmElement();
+    return;
+  }
+
+  void bufferPromise.then((buffer) => {
+    if (!buffer) {
+      playAlarmElement();
+      return;
+    }
+    startAlarmBuffer(buffer);
+  });
+}
+
 function getModeDescription(mode: TimerMode) {
   return mode === "exam" ? "12-station circuit" : "Single station";
 }
@@ -357,6 +388,7 @@ export function NacOsceTimer() {
   const [caseType, setCaseType] = useState<CaseType>("with-questions");
   const [theme, setTheme] = useState<Theme>("light");
   const [isMuted, setIsMuted] = useState(false);
+  const [volume, setVolumeState] = useState(1);
   const [phase, setPhase] = useState<TimerPhase>("reading");
   const [secondsRemaining, setSecondsRemaining] = useState(getInitialPhaseSeconds);
   const [stationIndex, setStationIndex] = useState(1);
@@ -374,6 +406,15 @@ export function NacOsceTimer() {
     }
 
     setIsMuted(window.localStorage.getItem("nac-osce-muted") === "true");
+    
+    const savedVolume = window.localStorage.getItem("nac-osce-volume");
+    if (savedVolume !== null) {
+      const vol = parseFloat(savedVolume);
+      if (!isNaN(vol)) {
+        setVolumeState(vol);
+        setAudioVolume(vol);
+      }
+    }
   }, []);
 
   useEffect(() => {
@@ -429,6 +470,15 @@ export function NacOsceTimer() {
       return next;
     });
   }, []);
+  
+  const handleVolumeChange = useCallback((newVolume: number) => {
+    setVolumeState(newVolume);
+    setAudioVolume(newVolume);
+    window.localStorage.setItem("nac-osce-volume", String(newVolume));
+    if (!isMuted) {
+      playTestAlarm();
+    }
+  }, [isMuted]);
   const playTimerAlarm = useCallback((type: AlarmType) => playAlarm(type, isMuted), [isMuted]);
   const resetTimer = useCallback(
     (nextMode = mode, nextCaseType = caseType) => {
@@ -845,20 +895,53 @@ export function NacOsceTimer() {
         </section>
 
         <section className="mt-4 w-full rounded-lg border border-clinical-line bg-[var(--surface)] p-4 shadow-panel sm:p-5">
-          <label className="flex items-center justify-between gap-3 rounded-md border border-clinical-line px-3 py-3">
-            <span>
-              <span className="block text-sm font-semibold text-[var(--text-soft)]">Auto-advance stations</span>
-              <span className="mt-1 block text-xs leading-5 text-[var(--text-muted)]">
-                Useful for full 12-station mode.
+          <div className="space-y-4">
+            <label className="flex items-center justify-between gap-3 rounded-md border border-clinical-line px-3 py-3">
+              <span>
+                <span className="block text-sm font-semibold text-[var(--text-soft)]">Auto-advance stations</span>
+                <span className="mt-1 block text-xs leading-5 text-[var(--text-muted)]">
+                  Useful for full 12-station mode.
+                </span>
               </span>
-            </span>
-            <input
-              type="checkbox"
-              checked={autoAdvance}
-              onChange={(event) => setAutoAdvance(event.target.checked)}
-              className="h-5 w-5 shrink-0 accent-clinical-teal"
-            />
-          </label>
+              <input
+                type="checkbox"
+                checked={autoAdvance}
+                onChange={(event) => setAutoAdvance(event.target.checked)}
+                className="h-5 w-5 shrink-0 accent-clinical-teal"
+              />
+            </label>
+            
+            <div className="rounded-md border border-clinical-line px-3 py-3">
+              <div className="flex items-center justify-between gap-2">
+                <span className="block text-sm font-semibold text-[var(--text-soft)]">Volume</span>
+                <span className="text-xs font-semibold text-[var(--text-muted)]">{Math.round(volume * 100)}%</span>
+              </div>
+              <div className="mt-2 flex items-center gap-2">
+                <input
+                  type="range"
+                  min="0"
+                  max="1"
+                  step="0.01"
+                  value={volume}
+                  onChange={(event) => handleVolumeChange(parseFloat(event.target.value))}
+                  className="flex-1 accent-clinical-teal"
+                  aria-label="Adjust volume"
+                />
+                <button
+                  type="button"
+                  onClick={() => handleVolumeChange(volume)}
+                  className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-clinical-line bg-[var(--surface)] text-[var(--text)] hover:bg-[var(--surface-muted)]"
+                  title="Play test sound"
+                  aria-label="Play test sound"
+                >
+                  <Volume2 size={16} />
+                </button>
+              </div>
+              <p className="mt-1 text-xs leading-5 text-[var(--text-muted)]">
+                Adjust and play test sound to verify volume level
+              </p>
+            </div>
+          </div>
         </section>
       </div>
     </main>
