@@ -345,7 +345,21 @@ function playAlarm(type: AlarmType, isMuted = false) {
 
   navigator.vibrate?.([240, 100, 240, 100, 340]);
 }
+function playTestAlarm() {
+  const bufferPromise = loadAlarmBuffer();
+  if (!bufferPromise) {
+    playAlarmElement();
+    return;
+  }
 
+  void bufferPromise.then((buffer) => {
+    if (!buffer) {
+      playAlarmElement();
+      return;
+    }
+    startAlarmBuffer(buffer);
+  });
+}
 function setAudioVolume(volume: number) {
   sharedVolume = Math.max(0, Math.min(1, volume));
   if (sharedAudioGain) {
@@ -459,7 +473,10 @@ export function NacOsceTimer() {
     setVolumeState(newVolume);
     setAudioVolume(newVolume);
     window.localStorage.setItem("nac-osce-volume", String(newVolume));
-  }, []);
+    if (!isMuted) {
+      playTestAlarm();
+    }
+  }, [isMuted]);
   const playTimerAlarm = useCallback((type: AlarmType) => playAlarm(type, isMuted), [isMuted]);
   const resetTimer = useCallback(
     (nextMode = mode, nextCaseType = caseType) => {
@@ -677,6 +694,22 @@ export function NacOsceTimer() {
             <h1 className="text-2xl font-semibold text-[var(--text)] sm:text-3xl">Practice timer</h1>
           </div>
           <div className="flex shrink-0 items-center gap-2">
+            <div className="flex items-center gap-1">
+              <input
+                type="range"
+                min="0"
+                max="1"
+                step="0.01"
+                value={volume}
+                onChange={(event) => handleVolumeChange(parseFloat(event.target.value))}
+                className="volume-slider w-16"
+                aria-label="Volume"
+                title="Adjust volume"
+              />
+              <span className="w-10 text-right text-xs font-semibold text-[var(--text-muted)]">
+                {Math.round(volume * 100)}%
+              </span>
+            </div>
             <button
               type="button"
               onClick={toggleMute}
@@ -687,19 +720,6 @@ export function NacOsceTimer() {
             >
               {isMuted ? <VolumeX size={19} /> : <Volume2 size={19} />}
             </button>
-            <div className="flex items-center rounded-md border border-clinical-line bg-[var(--surface)] px-2 shadow-sm">
-              <input
-                type="range"
-                min="0"
-                max="1"
-                step="0.01"
-                value={volume}
-                onChange={(event) => handleVolumeChange(parseFloat(event.target.value))}
-                className="h-6 w-20 accent-clinical-teal"
-                aria-label="Volume"
-                title="Adjust volume"
-              />
-            </div>
             <button
               type="button"
               onClick={() => setTheme((current) => (current === "light" ? "dark" : "light"))}
