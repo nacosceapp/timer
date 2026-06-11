@@ -7,8 +7,8 @@ const nextConfig = {
     unoptimized: true
   },
   trailingSlash: true,
-  basePath: isGithubPages ? "/nac_osce_app" : undefined,
-  assetPrefix: isGithubPages ? "/nac_osce_app/" : undefined,
+  basePath: isGithubPages ? "/timer" : undefined,
+  assetPrefix: isGithubPages ? "/timer/" : undefined,
   experimental: {
     typedRoutes: false
   }
