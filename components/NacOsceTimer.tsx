@@ -357,22 +357,6 @@ function setAudioVolume(volume: number) {
   }
 }
 
-function playTestAlarm() {
-  const bufferPromise = loadAlarmBuffer();
-  if (!bufferPromise) {
-    playAlarmElement();
-    return;
-  }
-
-  void bufferPromise.then((buffer) => {
-    if (!buffer) {
-      playAlarmElement();
-      return;
-    }
-    startAlarmBuffer(buffer);
-  });
-}
-
 function getModeDescription(mode: TimerMode) {
   return mode === "exam" ? "12-station circuit" : "Single station";
 }
@@ -406,7 +390,7 @@ export function NacOsceTimer() {
     }
 
     setIsMuted(window.localStorage.getItem("nac-osce-muted") === "true");
-    
+
     const savedVolume = window.localStorage.getItem("nac-osce-volume");
     if (savedVolume !== null) {
       const vol = parseFloat(savedVolume);
@@ -470,15 +454,12 @@ export function NacOsceTimer() {
       return next;
     });
   }, []);
-  
+
   const handleVolumeChange = useCallback((newVolume: number) => {
     setVolumeState(newVolume);
     setAudioVolume(newVolume);
     window.localStorage.setItem("nac-osce-volume", String(newVolume));
-    if (!isMuted) {
-      playTestAlarm();
-    }
-  }, [isMuted]);
+  }, []);
   const playTimerAlarm = useCallback((type: AlarmType) => playAlarm(type, isMuted), [isMuted]);
   const resetTimer = useCallback(
     (nextMode = mode, nextCaseType = caseType) => {
@@ -706,6 +687,19 @@ export function NacOsceTimer() {
             >
               {isMuted ? <VolumeX size={19} /> : <Volume2 size={19} />}
             </button>
+            <div className="flex items-center rounded-md border border-clinical-line bg-[var(--surface)] px-2 shadow-sm">
+              <input
+                type="range"
+                min="0"
+                max="1"
+                step="0.01"
+                value={volume}
+                onChange={(event) => handleVolumeChange(parseFloat(event.target.value))}
+                className="h-6 w-20 accent-clinical-teal"
+                aria-label="Volume"
+                title="Adjust volume"
+              />
+            </div>
             <button
               type="button"
               onClick={() => setTheme((current) => (current === "light" ? "dark" : "light"))}
@@ -733,9 +727,8 @@ export function NacOsceTimer() {
 
           <div className="mt-5">
             <div
-              className={`relative mx-auto aspect-square w-full max-w-[18rem] rounded-full sm:max-w-[21rem] ${
-                isWarning ? "timer-warning" : ""
-              }`}
+              className={`relative mx-auto aspect-square w-full max-w-[18rem] rounded-full sm:max-w-[21rem] ${isWarning ? "timer-warning" : ""
+                }`}
             >
               <svg
                 className="absolute inset-0 block h-full w-full -rotate-90"
@@ -766,9 +759,8 @@ export function NacOsceTimer() {
                 />
               </svg>
               <div
-                className={`absolute inset-[24px] flex items-center justify-center rounded-full sm:inset-[28px] ${
-                  isWarning ? "bg-[var(--warning-bg)]" : "bg-[var(--timer-bg)]"
-                }`}
+                className={`absolute inset-[24px] flex items-center justify-center rounded-full sm:inset-[28px] ${isWarning ? "bg-[var(--warning-bg)]" : "bg-[var(--timer-bg)]"
+                  }`}
               >
                 <div className="text-center">
                   <p className={`font-mono text-6xl font-semibold sm:text-7xl ${isWarning ? "text-red-700" : "text-clinical-navy"}`}>
@@ -858,11 +850,10 @@ export function NacOsceTimer() {
                     key={option}
                     type="button"
                     onClick={() => resetTimer(option, caseType)}
-                    className={`flex h-20 flex-col justify-center rounded-md border px-3 py-2 text-left text-sm font-semibold ${
-                      mode === option
-                        ? "border-clinical-teal bg-clinical-mist text-clinical-navy"
-                        : "border-clinical-line bg-[var(--surface)] text-[var(--text-soft)]"
-                    }`}
+                    className={`flex h-20 flex-col justify-center rounded-md border px-3 py-2 text-left text-sm font-semibold ${mode === option
+                      ? "border-clinical-teal bg-clinical-mist text-clinical-navy"
+                      : "border-clinical-line bg-[var(--surface)] text-[var(--text-soft)]"
+                      }`}
                   >
                     <span className="block capitalize">{option}</span>
                     <span className="mt-1 block text-xs font-medium leading-tight text-[var(--text-muted)]">{getModeDescription(option)}</span>
@@ -879,11 +870,10 @@ export function NacOsceTimer() {
                     key={option}
                     type="button"
                     onClick={() => resetTimer(mode, option)}
-                    className={`flex h-20 flex-col justify-center rounded-md border px-3 py-2 text-left text-sm font-semibold ${
-                      caseType === option
-                        ? "border-clinical-teal bg-clinical-mist text-clinical-navy"
-                        : "border-clinical-line bg-[var(--surface)] text-[var(--text-soft)]"
-                    }`}
+                    className={`flex h-20 flex-col justify-center rounded-md border px-3 py-2 text-left text-sm font-semibold ${caseType === option
+                      ? "border-clinical-teal bg-clinical-mist text-clinical-navy"
+                      : "border-clinical-line bg-[var(--surface)] text-[var(--text-soft)]"
+                      }`}
                   >
                     <span className="block">{option === "with-questions" ? "With oral questions" : "No oral questions"}</span>
                     <span className="mt-1 block text-xs font-medium leading-tight text-[var(--text-muted)]">{getCaseTypeDescription(option)}</span>
@@ -895,53 +885,20 @@ export function NacOsceTimer() {
         </section>
 
         <section className="mt-4 w-full rounded-lg border border-clinical-line bg-[var(--surface)] p-4 shadow-panel sm:p-5">
-          <div className="space-y-4">
-            <label className="flex items-center justify-between gap-3 rounded-md border border-clinical-line px-3 py-3">
-              <span>
-                <span className="block text-sm font-semibold text-[var(--text-soft)]">Auto-advance stations</span>
-                <span className="mt-1 block text-xs leading-5 text-[var(--text-muted)]">
-                  Useful for full 12-station mode.
-                </span>
+          <label className="flex items-center justify-between gap-3 rounded-md border border-clinical-line px-3 py-3">
+            <span>
+              <span className="block text-sm font-semibold text-[var(--text-soft)]">Auto-advance stations</span>
+              <span className="mt-1 block text-xs leading-5 text-[var(--text-muted)]">
+                Useful for full 12-station mode.
               </span>
-              <input
-                type="checkbox"
-                checked={autoAdvance}
-                onChange={(event) => setAutoAdvance(event.target.checked)}
-                className="h-5 w-5 shrink-0 accent-clinical-teal"
-              />
-            </label>
-            
-            <div className="rounded-md border border-clinical-line px-3 py-3">
-              <div className="flex items-center justify-between gap-2">
-                <span className="block text-sm font-semibold text-[var(--text-soft)]">Volume</span>
-                <span className="text-xs font-semibold text-[var(--text-muted)]">{Math.round(volume * 100)}%</span>
-              </div>
-              <div className="mt-2 flex items-center gap-2">
-                <input
-                  type="range"
-                  min="0"
-                  max="1"
-                  step="0.01"
-                  value={volume}
-                  onChange={(event) => handleVolumeChange(parseFloat(event.target.value))}
-                  className="flex-1 accent-clinical-teal"
-                  aria-label="Adjust volume"
-                />
-                <button
-                  type="button"
-                  onClick={() => handleVolumeChange(volume)}
-                  className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-clinical-line bg-[var(--surface)] text-[var(--text)] hover:bg-[var(--surface-muted)]"
-                  title="Play test sound"
-                  aria-label="Play test sound"
-                >
-                  <Volume2 size={16} />
-                </button>
-              </div>
-              <p className="mt-1 text-xs leading-5 text-[var(--text-muted)]">
-                Adjust and play test sound to verify volume level
-              </p>
-            </div>
-          </div>
+            </span>
+            <input
+              type="checkbox"
+              checked={autoAdvance}
+              onChange={(event) => setAutoAdvance(event.target.checked)}
+              className="h-5 w-5 shrink-0 accent-clinical-teal"
+            />
+          </label>
         </section>
       </div>
     </main>
