@@ -46,7 +46,6 @@ let sharedAlarmBufferPromise: Promise<AudioBuffer | null> | null = null;
 let sharedAlarmUnlocked = false;
 let sharedAudioGain: GainNode | null = null;
 let sharedVolume = 1;
-let lastTestAlarmTime = 0;
 
 function formatTime(totalSeconds: number) {
   const minutes = Math.floor(totalSeconds / 60)
@@ -347,12 +346,6 @@ function playAlarm(type: AlarmType, isMuted = false) {
   navigator.vibrate?.([240, 100, 240, 100, 340]);
 }
 function playTestAlarm() {
-  const now = Date.now();
-  if (now - lastTestAlarmTime < 200) {
-    return;
-  }
-  lastTestAlarmTime = now;
-
   const bufferPromise = loadAlarmBuffer();
   if (!bufferPromise) {
     playAlarmElement();
@@ -480,6 +473,9 @@ export function NacOsceTimer() {
     setVolumeState(newVolume);
     setAudioVolume(newVolume);
     window.localStorage.setItem("nac-osce-volume", String(newVolume));
+  }, []);
+
+  const handleVolumeRelease = useCallback(() => {
     if (!isMuted) {
       playTestAlarm();
     }
@@ -709,6 +705,9 @@ export function NacOsceTimer() {
                 step="0.01"
                 value={volume}
                 onChange={(event) => handleVolumeChange(parseFloat(event.target.value))}
+                onPointerUp={handleVolumeRelease}
+                onMouseUp={handleVolumeRelease}
+                onTouchEnd={handleVolumeRelease}
                 className="volume-slider w-16"
                 aria-label="Volume"
                 title="Adjust volume"
