@@ -700,7 +700,7 @@ export function NacOsceTimer() {
             <h1 className="text-2xl font-semibold text-[var(--text)] sm:text-3xl">Practice timer</h1>
           </div>
           <div className="flex shrink-0 items-center gap-2">
-            <div className="flex items-center gap-1">
+            <div className="inline-flex items-center gap-2 rounded-md border border-clinical-line bg-[var(--surface)] px-3 shadow-sm">
               <input
                 type="range"
                 min="0"
@@ -711,11 +711,11 @@ export function NacOsceTimer() {
                 onPointerUp={handleVolumeRelease}
                 onMouseUp={handleVolumeRelease}
                 onTouchEnd={handleVolumeRelease}
-                className="volume-slider w-16"
+                className="volume-slider h-11 w-20"
                 aria-label="Volume"
                 title="Adjust volume"
               />
-              <span className="w-10 text-right text-xs font-semibold text-[var(--text-muted)]">
+              <span className="w-12 text-right text-xs font-semibold text-[var(--text-muted)]">
                 {Math.round(volume * 100)}%
               </span>
             </div>
