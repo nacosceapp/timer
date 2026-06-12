@@ -699,7 +699,7 @@ export function NacOsceTimer() {
             <h1 className="text-2xl font-semibold sm:text-3xl gradient-text">NAC OSCE Timer</h1>
           </div>
           <div className="flex shrink-0 items-center gap-2">
-            <div className="inline-flex items-center gap-1.5 rounded-md border border-clinical-line bg-[var(--surface)] px-2 shadow-sm">
+            <div className="inline-flex h-11 items-center gap-1.5 rounded-md border border-clinical-line bg-[var(--surface)] px-2 shadow-sm">
               <input
                 type="range"
                 min="0"
@@ -710,7 +710,7 @@ export function NacOsceTimer() {
                 onPointerUp={handleVolumeRelease}
                 onMouseUp={handleVolumeRelease}
                 onTouchEnd={handleVolumeRelease}
-                className="volume-slider h-11 w-14"
+                className="volume-slider w-14"
                 aria-label="Volume"
                 title="Adjust volume"
               />
