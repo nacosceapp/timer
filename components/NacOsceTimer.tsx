@@ -46,6 +46,7 @@ let sharedAlarmBufferPromise: Promise<AudioBuffer | null> | null = null;
 let sharedAlarmUnlocked = false;
 let sharedAudioGain: GainNode | null = null;
 let sharedVolume = 1;
+let lastTestAlarmTime = 0;
 
 function formatTime(totalSeconds: number) {
   const minutes = Math.floor(totalSeconds / 60)
@@ -346,6 +347,12 @@ function playAlarm(type: AlarmType, isMuted = false) {
   navigator.vibrate?.([240, 100, 240, 100, 340]);
 }
 function playTestAlarm() {
+  const now = Date.now();
+  if (now - lastTestAlarmTime < 200) {
+    return;
+  }
+  lastTestAlarmTime = now;
+
   const bufferPromise = loadAlarmBuffer();
   if (!bufferPromise) {
     playAlarmElement();
