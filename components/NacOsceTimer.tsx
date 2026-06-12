@@ -696,8 +696,7 @@ export function NacOsceTimer() {
       <div className="mx-4 flex min-h-screen flex-col py-4 sm:mx-auto sm:w-full sm:max-w-5xl sm:px-6 lg:px-8">
         <header className="flex items-center justify-between gap-3 py-2">
           <div className="min-w-0">
-            <p className="text-xs font-semibold uppercase tracking-wide text-clinical-teal">NAC OSCE timer</p>
-            <h1 className="text-2xl font-semibold text-[var(--text)] sm:text-3xl">Practice timer</h1>
+            <h1 className="text-2xl font-semibold text-[var(--text)] sm:text-3xl">NAC OSCE Timer</h1>
           </div>
           <div className="flex shrink-0 items-center gap-2">
             <div className="inline-flex items-center gap-2 rounded-md border border-clinical-line bg-[var(--surface)] px-3 shadow-sm">
