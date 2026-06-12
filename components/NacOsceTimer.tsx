@@ -259,6 +259,9 @@ function unlockAudio(primeAudioElement = true) {
       }, 120);
     })
     .catch(() => {
+      // On iOS Safari, the initial play might fail due to policy restrictions
+      // Mark as unlocked anyway since the audio context is ready
+      sharedAlarmUnlocked = true;
       audio.volume = 1;
     });
 }
@@ -269,7 +272,11 @@ function startAlarmBuffer(buffer: AudioBuffer) {
     return;
   }
 
-  void context.resume();
+  // Ensure context is running (especially important for iOS Safari)
+  if (context.state === "suspended") {
+    void context.resume();
+  }
+
   const source = context.createBufferSource();
   if (!sharedAudioGain) {
     sharedAudioGain = context.createGain();
@@ -308,9 +315,15 @@ function playAlarmBuffer(onFallback: () => void) {
 }
 
 function playAlarmElement() {
+  const context = getAudioContext();
   const audio = getAlarmAudio();
   if (!audio) {
     return;
+  }
+
+  // Ensure audio context is resumed on iOS Safari
+  if (context && context.state === "suspended") {
+    void context.resume();
   }
 
   audio.pause();
@@ -711,7 +724,7 @@ export function NacOsceTimer() {
                 onPointerUp={handleVolumeRelease}
                 onMouseUp={handleVolumeRelease}
                 onTouchEnd={handleVolumeRelease}
-                className="volume-slider w-20"
+                className="volume-slider w-28"
                 aria-label="Volume"
                 title="Adjust volume"
               />
