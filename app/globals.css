@@ -256,28 +256,28 @@ select {
   }
 
   .volume-slider {
-    height: 3.5rem;
+    height: 2.75rem;
     touch-action: none;
   }
 
   .volume-slider::-webkit-slider-runnable-track {
-    height: 0.6rem;
+    height: 0.55rem;
   }
 
   .volume-slider::-webkit-slider-thumb {
-    width: 1.5rem;
-    height: 1.5rem;
-    margin-top: -0.45rem;
-    box-shadow: 0 4px 14px rgba(21, 48, 71, 0.24);
+    width: 1.2rem;
+    height: 1.2rem;
+    margin-top: -0.325rem;
+    box-shadow: 0 3px 10px rgba(21, 48, 71, 0.18);
   }
 
   .volume-slider::-moz-range-track {
-    height: 0.6rem;
+    height: 0.55rem;
   }
 
   .volume-slider::-moz-range-thumb {
-    width: 1.5rem;
-    height: 1.5rem;
-    box-shadow: 0 4px 14px rgba(21, 48, 71, 0.24);
+    width: 1.2rem;
+    height: 1.2rem;
+    box-shadow: 0 3px 10px rgba(21, 48, 71, 0.18);
   }
 }
