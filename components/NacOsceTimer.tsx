@@ -480,6 +480,7 @@ export function NacOsceTimer() {
 
   const handleVolumeRelease = useCallback(() => {
     if (!isMuted) {
+      unlockAudio(false);
       playTestAlarm();
     }
   }, [isMuted]);
@@ -710,7 +711,7 @@ export function NacOsceTimer() {
                 onPointerUp={handleVolumeRelease}
                 onMouseUp={handleVolumeRelease}
                 onTouchEnd={handleVolumeRelease}
-                className="volume-slider w-14"
+                className="volume-slider w-20"
                 aria-label="Volume"
                 title="Adjust volume"
               />
