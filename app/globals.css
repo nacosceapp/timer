@@ -60,6 +60,13 @@ select {
   animation: pulse-warning 1s ease-in-out infinite;
 }
 
+.gradient-text {
+  background: linear-gradient(90deg, var(--clinical-teal), var(--clinical-blue));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
 .time-slider {
   height: 2rem;
   appearance: none;
