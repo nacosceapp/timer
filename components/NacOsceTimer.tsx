@@ -361,13 +361,16 @@ function playTestAlarm() {
   });
 }
 function setAudioVolume(volume: number) {
-  sharedVolume = Math.max(0, Math.min(1, volume));
+  const normalizedVolume = Math.max(0, Math.min(1, volume));
+  // Use logarithmic scale for better low-volume granularity
+  const audioVolume = Math.pow(normalizedVolume, 2.5);
+  sharedVolume = audioVolume;
   if (sharedAudioGain) {
-    sharedAudioGain.gain.value = sharedVolume;
+    sharedAudioGain.gain.value = audioVolume;
   }
   const audio = sharedAlarmAudio;
   if (audio) {
-    audio.volume = sharedVolume;
+    audio.volume = audioVolume;
   }
 }
 
