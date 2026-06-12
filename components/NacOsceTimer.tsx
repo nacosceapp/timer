@@ -47,6 +47,10 @@ let sharedAlarmUnlocked = false;
 let sharedAudioGain: GainNode | null = null;
 let sharedVolume = 1;
 
+function isIOS() {
+  return /iPad|iPhone|iPod/.test(navigator.userAgent);
+}
+
 function formatTime(totalSeconds: number) {
   const minutes = Math.floor(totalSeconds / 60)
     .toString()
@@ -359,6 +363,12 @@ function playAlarm(type: AlarmType, isMuted = false) {
   navigator.vibrate?.([240, 100, 240, 100, 340]);
 }
 function playTestAlarm() {
+  // On iOS Safari, HTMLAudioElement is more reliable for autoplay
+  if (isIOS()) {
+    playAlarmElement();
+    return;
+  }
+
   const bufferPromise = loadAlarmBuffer();
   if (!bufferPromise) {
     playAlarmElement();
@@ -490,6 +500,13 @@ export function NacOsceTimer() {
     setAudioVolume(newVolume);
     window.localStorage.setItem("nac-osce-volume", String(newVolume));
   }, []);
+
+  const handleVolumeTouchStart = useCallback(() => {
+    // On iOS Safari, try to unlock audio on first touch
+    if (isIOS() && !isMuted) {
+      unlockAudio(false);
+    }
+  }, [isMuted]);
 
   const handleVolumeRelease = useCallback(() => {
     if (!isMuted) {
@@ -723,6 +740,7 @@ export function NacOsceTimer() {
                 onChange={(event) => handleVolumeChange(parseFloat(event.target.value))}
                 onPointerUp={handleVolumeRelease}
                 onMouseUp={handleVolumeRelease}
+                onTouchStart={handleVolumeTouchStart}
                 onTouchEnd={handleVolumeRelease}
                 className="volume-slider w-28"
                 aria-label="Volume"
