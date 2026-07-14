@@ -452,6 +452,73 @@ export function NacOsceTimer() {
   const sliderElapsedSeconds = seekElapsedSeconds ?? elapsedSeconds;
   const canSeek = phase !== "complete" && phase !== "station-complete";
   const displaySecondsRemaining = canSeek ? phaseDuration - sliderElapsedSeconds : 0;
+
+
+  const isWarning = canSeek && displaySecondsRemaining <= WARNING_SECONDS;
+
+  // Compact phase emoji and strings for browser tab title
+  const phaseIcon     = phase === "reading" ? "📖" : phase === "encounter" ? "🩺" : phase === "questions" ? "💬" : "";
+  const stationSuffix = stationCount > 1 ? ` ${stationIndex}/${stationCount}` : "";
+  const statusIcon    = isWarning ? "⚠️" : isRunning ? "⏱" : "⏸";
+  const tabTime       = formatTime(displaySecondsRemaining);
+  const tabTitle      = `${statusIcon} ${tabTime} ${phaseIcon}${stationSuffix}`;
+
+  // Ref: store the real Next.js-generated favicon href (captured once at mount)
+  const faviconHrefRef = useRef("/icon.png");
+
+  // On mount: snapshot the actual favicon href so we can restore it exactly
+  useEffect(() => {
+    const link = document.querySelector<HTMLLinkElement>("link[rel~='icon']");
+    if (link?.href) faviconHrefRef.current = link.href;
+  }, []);
+
+  // Swap favicon href — never remove the element (Next.js re-inserts removed link tags)
+  const BLANK_FAVICON = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg'/%3E";
+  function hideFavicon() {
+    const link = document.querySelector<HTMLLinkElement>("link[rel~='icon']");
+    if (link && link.href !== BLANK_FAVICON) link.href = BLANK_FAVICON;
+  }
+  function showFavicon() {
+    const link = document.querySelector<HTMLLinkElement>("link[rel~='icon']");
+    if (link) link.href = faviconHrefRef.current;
+  }
+
+  // Ref: track whether component is still mounted so cleanup only resets title on unmount,
+  // not on every 500ms tick re-run (which causes the visible "NAC OSCE Timer" flash)
+  const isMountedRef = useRef(true);
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => { isMountedRef.current = false; };
+  }, []);
+
+  // Single effect: update tab title + favicon on every timer tick
+  useEffect(() => {
+    const appName = "NAC OSCE Timer";
+    const isIdle  = !isRunning && phase === "reading" && secondsRemaining === READING_SECONDS;
+
+    if (isIdle || phase === "complete" || phase === "station-complete") {
+      showFavicon();
+      document.title =
+        phase === "complete"         ? "✅ Exam Complete" :
+        phase === "station-complete" ? "✅ Station Complete" :
+        appName;
+    } else {
+      // Active timer: blank favicon, set countdown title
+      hideFavicon();
+      document.title = tabTitle;
+    }
+
+    // Only restore on unmount — NOT on every re-run, which would flash "NAC OSCE Timer"
+    return () => {
+      if (!isMountedRef.current) {
+        document.title = appName;
+        showFavicon();
+      }
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tabTitle, isRunning, phase, secondsRemaining]);
+
+
   const remainingProgress = useMemo(() => {
     if (!canSeek) {
       return 0;
@@ -481,7 +548,6 @@ export function NacOsceTimer() {
     return "Timer stopped";
   }, [caseType, phase]);
 
-  const isWarning = canSeek && displaySecondsRemaining <= WARNING_SECONDS;
   const toggleMute = useCallback(() => {
     setIsMuted((current) => {
       const next = !current;
