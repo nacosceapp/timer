@@ -15,10 +15,10 @@ import {
 } from "lucide-react";
 
 type TimerMode = "practice" | "exam";
-type CaseType = "with-questions" | "without-questions";
+type CaseType = "with-questions" | "without-questions" | "counselling";
 type Theme = "light" | "dark";
 type TimerPhase = "reading" | "encounter" | "questions" | "station-complete" | "complete";
-type AlarmType = "reading-end" | "eight-minute" | "station-end";
+type AlarmType = "reading-end" | "eight-minute" | "counselling-warning" | "station-end";
 type WindowWithAudioFallback = Window & {
   webkitAudioContext?: typeof AudioContext;
 };
@@ -34,6 +34,7 @@ const READING_SECONDS = 2 * 60;
 const EIGHT_MINUTE_SECONDS = 8 * 60;
 const FULL_ENCOUNTER_SECONDS = 11 * 60;
 const QUESTIONS_SECONDS = 3 * 60;
+const COUNSELLING_WARNING_REMAINING_SECONDS = 3 * 60;
 const EXAM_STATIONS = 12;
 const WARNING_SECONDS = 30;
 const RING_RADIUS = 44;
@@ -68,7 +69,7 @@ function getInitialPhaseSeconds() {
 }
 
 function getEncounterSeconds(caseType: CaseType) {
-  return caseType === "without-questions" ? FULL_ENCOUNTER_SECONDS : EIGHT_MINUTE_SECONDS;
+  return caseType === "with-questions" ? EIGHT_MINUTE_SECONDS : FULL_ENCOUNTER_SECONDS;
 }
 
 function getPhaseLabel(phase: TimerPhase) {
@@ -355,7 +356,7 @@ function playAlarm(type: AlarmType, isMuted = false) {
     return;
   }
 
-  if (type === "eight-minute") {
+  if (type === "eight-minute" || type === "counselling-warning") {
     navigator.vibrate?.([140, 70, 140]);
     return;
   }
@@ -402,9 +403,15 @@ function getModeDescription(mode: TimerMode) {
 }
 
 function getCaseTypeDescription(caseType: CaseType) {
-  return caseType === "with-questions"
-    ? "8 min encounter, 3 min questions"
-    : "11 min encounter";
+  if (caseType === "with-questions") {
+    return "8 min encounter, 3 min questions";
+  }
+
+  if (caseType === "counselling") {
+    return "11 min counselling, warning at 8 min";
+  }
+
+  return "11 min encounter";
 }
 
 export function NacOsceTimer() {
@@ -420,6 +427,7 @@ export function NacOsceTimer() {
   const [autoAdvance, setAutoAdvance] = useState(true);
   const [seekElapsedSeconds, setSeekElapsedSeconds] = useState<number | null>(null);
   const phaseEndsAtRef = useRef<number | null>(null);
+  const counsellingWarningTriggeredRef = useRef(false);
 
   useEffect(() => {
     const savedTheme = window.localStorage.getItem("nac-osce-theme");
@@ -454,10 +462,13 @@ export function NacOsceTimer() {
   const displaySecondsRemaining = canSeek ? phaseDuration - sliderElapsedSeconds : 0;
 
 
-  const isWarning = canSeek && displaySecondsRemaining <= WARNING_SECONDS;
+  const isCounsellingWarning = caseType === "counselling"
+    && phase === "encounter"
+    && displaySecondsRemaining <= COUNSELLING_WARNING_REMAINING_SECONDS;
+  const isWarning = canSeek && (displaySecondsRemaining <= WARNING_SECONDS || isCounsellingWarning);
 
   // Compact phase emoji and strings for browser tab title
-  const phaseIcon     = phase === "reading" ? "📖" : phase === "encounter" ? "🩺" : phase === "questions" ? "💬" : "";
+  const phaseIcon     = phase === "reading" ? "📖" : phase === "encounter" ? (caseType === "counselling" ? "🗣️" : "🩺") : phase === "questions" ? "💬" : "";
   const stationSuffix = stationCount > 1 ? ` ${stationIndex}/${stationCount}` : "";
   const statusIcon    = isWarning ? "⚠️" : isRunning ? "⏱" : "⏸";
   const tabTime       = formatTime(displaySecondsRemaining);
@@ -537,6 +548,10 @@ export function NacOsceTimer() {
       return "Next alarm: 8-minute oral-question signal";
     }
 
+    if (phase === "encounter" && caseType === "counselling") {
+      return "Warning alarm at 8:00 counselling time";
+    }
+
     if (phase === "encounter") {
       return "Next alarm: final 11-minute signal";
     }
@@ -588,6 +603,7 @@ export function NacOsceTimer() {
       setCaseType(nextCaseType);
       setPhase("reading");
       setSecondsRemaining(READING_SECONDS);
+      counsellingWarningTriggeredRef.current = false;
       setStationIndex(1);
       setIsRunning(false);
       setSeekElapsedSeconds(null);
@@ -649,6 +665,7 @@ export function NacOsceTimer() {
     setStationIndex((current) => current + 1);
     setPhase("reading");
     setSecondsRemaining(READING_SECONDS);
+    counsellingWarningTriggeredRef.current = false;
     setSeekElapsedSeconds(null);
   }, [autoAdvance, playTimerAlarm, stationCount, stationIndex]);
 
@@ -659,6 +676,7 @@ export function NacOsceTimer() {
       playTimerAlarm("reading-end");
       setPhase("encounter");
       setSecondsRemaining(getEncounterSeconds(caseType));
+      counsellingWarningTriggeredRef.current = false;
       setSeekElapsedSeconds(null);
       return;
     }
@@ -680,6 +698,7 @@ export function NacOsceTimer() {
       setStationIndex((current) => Math.min(current + 1, stationCount));
       setPhase("reading");
       setSecondsRemaining(READING_SECONDS);
+      counsellingWarningTriggeredRef.current = false;
       setIsRunning(true);
       setSeekElapsedSeconds(null);
     }
@@ -715,6 +734,15 @@ export function NacOsceTimer() {
 
       const remainingMs = phaseEndsAt - now;
       if (remainingMs > 0) {
+        if (
+          caseType === "counselling"
+          && phase === "encounter"
+          && remainingMs <= COUNSELLING_WARNING_REMAINING_SECONDS * 1000
+          && !counsellingWarningTriggeredRef.current
+        ) {
+          counsellingWarningTriggeredRef.current = true;
+          playTimerAlarm("counselling-warning");
+        }
         setSecondsRemaining(Math.ceil(remainingMs / 1000));
         return;
       }
@@ -742,6 +770,9 @@ export function NacOsceTimer() {
         }
 
         alarms.push(advance.alarm);
+        if (nextPhase === "reading" && advance.phase === "encounter") {
+          counsellingWarningTriggeredRef.current = false;
+        }
         nextPhase = advance.phase;
         nextStationIndex = advance.stationIndex;
         nextSecondsRemaining = advance.secondsRemaining;
@@ -991,7 +1022,7 @@ export function NacOsceTimer() {
             <div>
               <p className="text-sm font-semibold text-clinical-navy">Station type</p>
               <div className="mt-2 grid gap-2 sm:grid-cols-2">
-                {(["with-questions", "without-questions"] as const).map((option) => (
+                {(["with-questions", "without-questions", "counselling"] as const).map((option) => (
                   <button
                     key={option}
                     type="button"
@@ -1001,7 +1032,9 @@ export function NacOsceTimer() {
                       : "border-clinical-line bg-[var(--surface)] text-[var(--text-soft)]"
                       }`}
                   >
-                    <span className="block">{option === "with-questions" ? "With oral questions" : "No oral questions"}</span>
+                    <span className="block">
+                      {option === "with-questions" ? "With oral questions" : option === "counselling" ? "Counselling" : "No oral questions"}
+                    </span>
                     <span className="mt-1 block text-xs font-medium leading-tight text-[var(--text-muted)]">{getCaseTypeDescription(option)}</span>
                   </button>
                 ))}
