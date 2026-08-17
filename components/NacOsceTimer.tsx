@@ -15,7 +15,7 @@ import {
 } from "lucide-react";
 
 type TimerMode = "practice" | "exam";
-type CaseType = "with-questions" | "without-questions" | "counselling";
+type CaseType = "with-questions" | "counselling";
 type Theme = "light" | "dark";
 type TimerPhase = "reading" | "encounter" | "questions" | "station-complete" | "complete";
 type AlarmType = "reading-end" | "eight-minute" | "counselling-warning" | "station-end";
@@ -182,13 +182,17 @@ function getAudioContext() {
   return sharedAudioContext;
 }
 
+function getAlarmAudioSrc() {
+  return new URL(ALARM_AUDIO_SRC, document.baseURI).toString();
+}
+
 function getAlarmAudio() {
   if (typeof Audio === "undefined") {
     return null;
   }
 
   if (!sharedAlarmAudio) {
-    sharedAlarmAudio = new Audio(ALARM_AUDIO_SRC);
+    sharedAlarmAudio = new Audio(getAlarmAudioSrc());
     sharedAlarmAudio.preload = "auto";
     sharedAlarmAudio.volume = sharedVolume;
     sharedAlarmAudio.setAttribute("playsinline", "true");
@@ -212,7 +216,7 @@ function loadAlarmBuffer() {
     return sharedAlarmBufferPromise;
   }
 
-  sharedAlarmBufferPromise = fetch(ALARM_AUDIO_SRC)
+  sharedAlarmBufferPromise = fetch(getAlarmAudioSrc())
     .then((response) => {
       if (!response.ok) {
         throw new Error(`Unable to load alarm audio: ${response.status}`);
@@ -225,7 +229,11 @@ function loadAlarmBuffer() {
       sharedAlarmBuffer = buffer;
       return buffer;
     })
-    .catch(() => null);
+    .catch(() => {
+      // Allow a later user gesture to retry after a transient load failure.
+      sharedAlarmBufferPromise = null;
+      return null;
+    });
 
   return sharedAlarmBufferPromise;
 }
@@ -235,7 +243,7 @@ function unlockAudio(primeAudioElement = true) {
   const audio = getAlarmAudio();
 
   if (context) {
-    void context.resume();
+    void context.resume().catch(() => undefined);
     const oscillator = context.createOscillator();
     const gain = context.createGain();
     gain.gain.value = 0.0001;
@@ -260,14 +268,13 @@ function unlockAudio(primeAudioElement = true) {
       window.setTimeout(() => {
         audio.pause();
         audio.currentTime = 0;
-        audio.volume = 1;
+        audio.volume = sharedVolume;
       }, 120);
     })
     .catch(() => {
-      // On iOS Safari, the initial play might fail due to policy restrictions
-      // Mark as unlocked anyway since the audio context is ready
-      sharedAlarmUnlocked = true;
-      audio.volume = 1;
+      // Keep the element locked so a later user gesture can retry playback.
+      sharedAlarmUnlocked = false;
+      audio.volume = sharedVolume;
     });
 }
 
@@ -277,20 +284,25 @@ function startAlarmBuffer(buffer: AudioBuffer) {
     return;
   }
 
-  // Ensure context is running (especially important for iOS Safari)
+  const start = () => {
+    const source = context.createBufferSource();
+    if (!sharedAudioGain) {
+      sharedAudioGain = context.createGain();
+      sharedAudioGain.connect(context.destination);
+    }
+    sharedAudioGain.gain.value = sharedVolume;
+    source.buffer = buffer;
+    source.connect(sharedAudioGain);
+    source.start(context.currentTime + 0.01);
+  };
+
+  // Ensure context is running before starting the source, especially on iOS.
   if (context.state === "suspended") {
-    void context.resume();
+    void context.resume().then(start).catch(() => undefined);
+    return;
   }
 
-  const source = context.createBufferSource();
-  if (!sharedAudioGain) {
-    sharedAudioGain = context.createGain();
-    sharedAudioGain.connect(context.destination);
-  }
-  sharedAudioGain.gain.value = sharedVolume;
-  source.buffer = buffer;
-  source.connect(sharedAudioGain);
-  source.start(context.currentTime + 0.01);
+  start();
 }
 
 function playPreparedAlarm() {
@@ -407,11 +419,7 @@ function getCaseTypeDescription(caseType: CaseType) {
     return "8 min encounter, 3 min questions";
   }
 
-  if (caseType === "counselling") {
-    return "11 min counselling, warning at 8 min";
-  }
-
-  return "11 min encounter";
+  return "11 min counselling, warning at 8 min";
 }
 
 export function NacOsceTimer() {
@@ -474,26 +482,6 @@ export function NacOsceTimer() {
   const tabTime       = formatTime(displaySecondsRemaining);
   const tabTitle      = `${statusIcon} ${tabTime} ${phaseIcon}${stationSuffix}`;
 
-  // Ref: store the real Next.js-generated favicon href (captured once at mount)
-  const faviconHrefRef = useRef("/icon.png");
-
-  // On mount: snapshot the actual favicon href so we can restore it exactly
-  useEffect(() => {
-    const link = document.querySelector<HTMLLinkElement>("link[rel~='icon']");
-    if (link?.href) faviconHrefRef.current = link.href;
-  }, []);
-
-  // Swap favicon href — never remove the element (Next.js re-inserts removed link tags)
-  const BLANK_FAVICON = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg'/%3E";
-  function hideFavicon() {
-    const link = document.querySelector<HTMLLinkElement>("link[rel~='icon']");
-    if (link && link.href !== BLANK_FAVICON) link.href = BLANK_FAVICON;
-  }
-  function showFavicon() {
-    const link = document.querySelector<HTMLLinkElement>("link[rel~='icon']");
-    if (link) link.href = faviconHrefRef.current;
-  }
-
   // Ref: track whether component is still mounted so cleanup only resets title on unmount,
   // not on every 500ms tick re-run (which causes the visible "NAC OSCE Timer" flash)
   const isMountedRef = useRef(true);
@@ -502,20 +490,17 @@ export function NacOsceTimer() {
     return () => { isMountedRef.current = false; };
   }, []);
 
-  // Single effect: update tab title + favicon on every timer tick
+  // Update the tab title on every timer tick while leaving the favicon intact.
   useEffect(() => {
     const appName = "NAC OSCE Timer";
     const isIdle  = !isRunning && phase === "reading" && secondsRemaining === READING_SECONDS;
 
     if (isIdle || phase === "complete" || phase === "station-complete") {
-      showFavicon();
       document.title =
         phase === "complete"         ? "✅ Exam Complete" :
         phase === "station-complete" ? "✅ Station Complete" :
         appName;
     } else {
-      // Active timer: blank favicon, set countdown title
-      hideFavicon();
       document.title = tabTitle;
     }
 
@@ -523,7 +508,6 @@ export function NacOsceTimer() {
     return () => {
       if (!isMountedRef.current) {
         document.title = appName;
-        showFavicon();
       }
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1022,7 +1006,7 @@ export function NacOsceTimer() {
             <div>
               <p className="text-sm font-semibold text-clinical-navy">Station type</p>
               <div className="mt-2 grid gap-2 sm:grid-cols-2">
-                {(["with-questions", "without-questions", "counselling"] as const).map((option) => (
+                {(["with-questions", "counselling"] as const).map((option) => (
                   <button
                     key={option}
                     type="button"
@@ -1033,7 +1017,7 @@ export function NacOsceTimer() {
                       }`}
                   >
                     <span className="block">
-                      {option === "with-questions" ? "With oral questions" : option === "counselling" ? "Counselling" : "No oral questions"}
+                      {option === "with-questions" ? "With oral questions" : "Counselling"}
                     </span>
                     <span className="mt-1 block text-xs font-medium leading-tight text-[var(--text-muted)]">{getCaseTypeDescription(option)}</span>
                   </button>
