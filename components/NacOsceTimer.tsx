@@ -1,15 +1,21 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { type PointerEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { invoke, isTauri } from "@tauri-apps/api/core";
 import {
   Bell,
   CheckCircle2,
+  Download,
   Moon,
+  Minus,
+  Pin,
+  Minimize2,
   Pause,
   Play,
   RotateCcw,
   SkipForward,
   Sun,
+  X,
   Volume2,
   VolumeX
 } from "lucide-react";
@@ -29,6 +35,13 @@ type TimedPhaseAdvance = {
   stationIndex: number;
   isRunning: boolean;
 };
+type WindowBounds = {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+};
+type MiniPosition = { x: number; y: number };
 
 const READING_SECONDS = 2 * 60;
 const EIGHT_MINUTE_SECONDS = 8 * 60;
@@ -40,6 +53,7 @@ const WARNING_SECONDS = 30;
 const RING_RADIUS = 44;
 const RING_STROKE_WIDTH = 4.5;
 const ALARM_AUDIO_SRC = "alarm.m4a";
+const WINDOWS_RELEASES_URL = "https://github.com/nacosceapp/timer/releases/latest";
 let sharedAudioContext: AudioContext | null = null;
 let sharedAlarmAudio: HTMLAudioElement | null = null;
 let sharedAlarmBuffer: AudioBuffer | null = null;
@@ -428,6 +442,11 @@ export function NacOsceTimer() {
   const [theme, setTheme] = useState<Theme>("light");
   const [isMuted, setIsMuted] = useState(false);
   const [volume, setVolumeState] = useState(1);
+  const [isAlwaysOnTop, setIsAlwaysOnTop] = useState(false);
+  const [isCompactWindow, setIsCompactWindow] = useState(false);
+  const [isDesktopApp, setIsDesktopApp] = useState(false);
+  const fullWindowBoundsRef = useRef<WindowBounds | null>(null);
+  const miniatureDragTimerRef = useRef<number | null>(null);
   const [phase, setPhase] = useState<TimerPhase>("reading");
   const [secondsRemaining, setSecondsRemaining] = useState(getInitialPhaseSeconds);
   const [stationIndex, setStationIndex] = useState(1);
@@ -438,6 +457,8 @@ export function NacOsceTimer() {
   const counsellingWarningTriggeredRef = useRef(false);
 
   useEffect(() => {
+    setIsDesktopApp(isTauri());
+
     const savedTheme = window.localStorage.getItem("nac-osce-theme");
     if (savedTheme === "light" || savedTheme === "dark") {
       setTheme(savedTheme);
@@ -579,6 +600,82 @@ export function NacOsceTimer() {
       playTestAlarm();
     }
   }, [isMuted]);
+  const toggleAlwaysOnTop = useCallback(async () => {
+    if (!isDesktopApp) {
+      return;
+    }
+
+    const next = !isAlwaysOnTop;
+    await invoke("set_always_on_top", { enabled: next });
+    setIsAlwaysOnTop(next);
+  }, [isAlwaysOnTop, isDesktopApp]);
+  const toggleCompactWindow = useCallback(async () => {
+    if (!isDesktopApp) {
+      return;
+    }
+
+    const next = !isCompactWindow;
+    if (next) {
+      setIsCompactWindow(true);
+
+      try {
+        const bounds = await invoke<WindowBounds>("get_window_bounds");
+        fullWindowBoundsRef.current = bounds;
+        // Read this before compacting: resizing raises a Windows move event.
+        const savedPosition = await invoke<MiniPosition | null>("load_mini_position").catch(() => null);
+        await invoke("set_compact_window", { enabled: true });
+        if (savedPosition) {
+          await invoke("set_window_position", savedPosition).catch(() => undefined);
+        }
+      } catch {
+        // Keep the miniature UI active even if optional native positioning fails.
+      }
+    } else {
+      setIsCompactWindow(false);
+      const fullWindowBounds = fullWindowBoundsRef.current;
+      try {
+        // Stop miniature-position tracking before the full window moves back.
+        await invoke("set_compact_window", { enabled: false });
+        if (fullWindowBounds) {
+          await invoke("restore_window_bounds", { bounds: fullWindowBounds });
+        }
+      } catch {
+        // The expanded UI remains available even if a native position restore fails.
+      }
+    }
+  }, [isCompactWindow, isDesktopApp]);
+
+  const clearWindowDragTimer = useCallback(() => {
+    if (miniatureDragTimerRef.current !== null) {
+      window.clearTimeout(miniatureDragTimerRef.current);
+      miniatureDragTimerRef.current = null;
+    }
+  }, []);
+
+  const beginWindowDrag = useCallback((event: PointerEvent<HTMLElement>, allowInteractive = false) => {
+    if (event.button !== 0 || !isDesktopApp) {
+      return;
+    }
+
+    const target = event.target as HTMLElement;
+    if (!allowInteractive && target.closest("button, input, select, textarea, a, label, [data-no-window-drag]")) {
+      return;
+    }
+
+    clearWindowDragTimer();
+    miniatureDragTimerRef.current = window.setTimeout(() => {
+      miniatureDragTimerRef.current = null;
+      void invoke("start_dragging");
+    }, 180);
+  }, [clearWindowDragTimer, isDesktopApp]);
+
+  useEffect(() => {
+    if (!isDesktopApp || !isCompactWindow) {
+      return;
+    }
+
+    return undefined;
+  }, [isCompactWindow, isDesktopApp]);
   const playTimerAlarm = useCallback((type: AlarmType) => playAlarm(type, isMuted), [isMuted]);
   const resetTimer = useCallback(
     (nextMode = mode, nextCaseType = caseType) => {
@@ -804,13 +901,42 @@ export function NacOsceTimer() {
   }, [isRunning, phase, seekElapsedSeconds, syncTimerToNow]);
 
   return (
-    <main className="min-h-screen overflow-x-hidden bg-[var(--app-bg)] text-[var(--text)]">
-      <div className="mx-4 flex min-h-screen flex-col py-4 sm:mx-auto sm:w-full sm:max-w-5xl sm:px-6 lg:px-8">
-        <header className="flex items-center justify-between gap-3 py-2">
-          <div className="min-w-0">
-            <h1 className="text-2xl font-semibold sm:text-3xl gradient-text">NAC OSCE Timer</h1>
+    <main className={`${isCompactWindow ? "h-screen overflow-hidden" : "min-h-screen overflow-x-hidden"} bg-[var(--app-bg)] text-[var(--text)]`}>
+      <div
+        className={isCompactWindow ? "flex h-screen w-full flex-col" : "relative mx-4 flex min-h-screen flex-col py-4 sm:mx-auto sm:w-full sm:max-w-5xl sm:px-6 lg:px-8"}
+        onPointerDownCapture={isCompactWindow ? undefined : (event) => beginWindowDrag(event)}
+        onPointerUpCapture={isCompactWindow ? undefined : clearWindowDragTimer}
+        onPointerCancelCapture={isCompactWindow ? undefined : clearWindowDragTimer}
+      >
+        {!isCompactWindow && <header className={isDesktopApp ? "flex flex-col gap-3 py-2" : "flex items-center justify-between gap-3 py-2"}>
+          <div
+            className={isDesktopApp ? "flex min-w-0 items-center justify-between gap-3 cursor-move select-none" : "min-w-0"}
+          >
+            <h1 className={isDesktopApp ? "truncate text-2xl font-semibold sm:text-3xl gradient-text" : "text-2xl font-semibold sm:text-3xl gradient-text"}>NAC OSCE Timer</h1>
+            {isDesktopApp && (
+              <div className="flex shrink-0 items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => void invoke("minimize_window")}
+                  className="inline-flex h-11 w-11 items-center justify-center rounded-md border border-clinical-line bg-[var(--surface)] text-[var(--text)] shadow-sm hover:bg-[var(--surface-muted)]"
+                  aria-label="Minimize window"
+                  title="Minimize"
+                >
+                  <Minus size={19} />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void invoke("close_window")}
+                  className="inline-flex h-11 w-11 items-center justify-center rounded-md border border-clinical-line bg-[var(--surface)] text-[var(--text)] shadow-sm hover:bg-red-50 hover:text-red-700"
+                  aria-label="Close window"
+                  title="Close"
+                >
+                  <X size={19} />
+                </button>
+              </div>
+            )}
           </div>
-          <div className="flex shrink-0 items-center gap-2">
+          <div className={isDesktopApp ? "flex w-full min-w-0 flex-wrap items-center gap-2" : "flex shrink-0 items-center gap-2"}>
             <div className="inline-flex h-11 items-center gap-0.5 rounded-md border border-clinical-line bg-[var(--surface)] px-2 shadow-sm">
               <input
                 type="range"
@@ -850,9 +976,52 @@ export function NacOsceTimer() {
             >
               {theme === "light" ? <Moon size={19} /> : <Sun size={19} />}
             </button>
+            {isDesktopApp && <>
+            <button
+              type="button"
+              onClick={toggleAlwaysOnTop}
+              disabled={!isDesktopApp}
+              className={`inline-flex h-11 w-11 items-center justify-center rounded-md border border-clinical-line bg-[var(--surface)] text-[var(--text)] shadow-sm hover:bg-[var(--surface-muted)] disabled:cursor-not-allowed disabled:opacity-40 ${isAlwaysOnTop ? "bg-clinical-mist text-clinical-teal" : ""}`}
+              aria-label={isAlwaysOnTop ? "Disable always on top" : "Keep window on top"}
+              title={isAlwaysOnTop ? "Disable always on top" : "Keep window on top"}
+              aria-pressed={isAlwaysOnTop}
+            >
+              <Pin size={19} />
+            </button>
+            <button
+              type="button"
+              onClick={toggleCompactWindow}
+              disabled={!isDesktopApp}
+              className="inline-flex h-11 w-11 items-center justify-center rounded-md border border-clinical-line bg-[var(--surface)] text-[var(--text)] shadow-sm hover:bg-[var(--surface-muted)] disabled:cursor-not-allowed disabled:opacity-40"
+              aria-label={isCompactWindow ? "Use full window" : "Use compact window"}
+              title={isCompactWindow ? "Use full window" : "Use compact window"}
+              aria-pressed={isCompactWindow}
+            >
+              <Minimize2 size={19} />
+            </button>
+            </>}
           </div>
-        </header>
+        </header>}
 
+        {isCompactWindow ? (
+          <section
+            className="flex w-full flex-1 cursor-move select-none flex-col items-center justify-center overflow-hidden rounded-lg border border-clinical-line bg-[var(--surface)] px-1 py-0 shadow-panel"
+            data-tauri-drag-region="true"
+            onDoubleClickCapture={() => void toggleCompactWindow()}
+            onPointerDownCapture={(event) => beginWindowDrag(event, true)}
+            onPointerUpCapture={clearWindowDragTimer}
+            onPointerCancelCapture={clearWindowDragTimer}
+            title="Double-click to restore the full timer"
+          >
+            <p className={`pointer-events-none font-mono text-4xl font-semibold leading-none ${isWarning ? "text-red-700" : "text-clinical-navy"}`}>
+              {formatTime(displaySecondsRemaining)}
+            </p>
+            <p className={`pointer-events-none mt-0.5 max-w-full truncate text-center text-[10px] font-semibold leading-tight ${isWarning ? "text-red-700" : "text-[var(--text-soft)]"}`}>
+              {getPhaseLabel(phase)}
+            </p>
+          </section>
+        ) : (
+          <>
         <section className="mt-4 flex w-full min-w-0 flex-1 flex-col justify-center rounded-lg border border-clinical-line bg-[var(--surface)] p-4 shadow-panel sm:p-6">
           <div>
             <div>
@@ -1043,6 +1212,27 @@ export function NacOsceTimer() {
             />
           </label>
         </section>
+        {!isDesktopApp && (
+          <section className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-clinical-line bg-[var(--surface)] p-4 shadow-panel sm:p-5">
+            <div className="min-w-0">
+              <p className="text-sm font-semibold text-clinical-navy">Use the Windows desktop app</p>
+              <p className="mt-1 text-xs leading-5 text-[var(--text-muted)]">
+                Optional offline miniature timer with always-on-top support.
+              </p>
+            </div>
+            <a
+              href={WINDOWS_RELEASES_URL}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex min-h-11 shrink-0 items-center justify-center gap-2 rounded-md bg-clinical-blue px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700"
+            >
+              <Download size={17} />
+              Download for Windows
+            </a>
+          </section>
+        )}
+          </>
+        )}
       </div>
     </main>
   );

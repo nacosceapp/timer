@@ -11,3 +11,6 @@ yarn-error.log*
 pnpm-debug.log*
 .vercel
 coverage
+tsconfig.tsbuildinfo
+src-tauri/target
+src-tauri/gen
